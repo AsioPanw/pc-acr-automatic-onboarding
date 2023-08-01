@@ -19,7 +19,7 @@ def add_container_registries(base_url, token, existing_container_registries, acr
             if not any(existing_registry['registry'] == registry['name'] + ".azurecr.io" for existing_registry in existing_container_registries['specifications']):
                 new_registry = {
                     "version": "azure",
-                    "registry": registry['name'] + ".azurecr.io",
+                    "registry": f"{registry['name'].lower()}.azurecr.io",
                     "namespace": "",
                     "repository": "*",
                     "tag": "",
@@ -35,7 +35,7 @@ def add_container_registries(base_url, token, existing_container_registries, acr
 
                 # Add the new registry to the specifications list
                 existing_container_registries['specifications'].append(new_registry)
-                print(f"Registry to be added: {registry['name']}.azurecr.io")
+                print(f"Registry to be added: {registry['name'].lower()}.azurecr.io")
             else:
                 print(f"Registry {registry['name']}.azurecr.io already exists in Prisma Cloud")
 
@@ -156,22 +156,21 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     headers = {"content-type": "application/json; charset=UTF-8",
                "x-redlock-auth": token}
     
-    limit = 1000
+    limit = 100
     next_page_token = None
     subscriptions = []
+    rql = f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\""
+    print(f"RQL is: {rql}")
 
     # Initial request to get totalRows
     payload = json.dumps({
         "limit": limit,
-        "withResourceJson": False,
-        "query": f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\"",
-        "id": "d4c069a2-8383-4d49-8cbe-a3f020ddbcb8",
+        "query": rql,
         "timeRange": {
             "type": "relative",
             "value": {"unit": "hour", "amount": 24},
             "relativeTimeType": "BACKWARD"
         },
-        "heuristicSearch": True,
         "nextPageToken": next_page_token
     })
 
@@ -183,54 +182,42 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
         return None
 
     json_response = response.json()
+
+    # Initialize items with first page data
+    items = json_response['data']['items']
     total_rows = json_response['data']['totalRows']
-    subscriptions.extend(json_response['data']['items'])
-
-    # Calculate total pages. 
-    total_pages = total_rows // limit
-    # If there is a remainder
-    total_pages += (total_rows % limit > 0)
-
-    # Request the rest of the pages
-    for _ in range(1, total_pages):
-        next_page_token = json_response['data']['nextPageToken']
-
+    data = json_response.get('data', {})
+    next_page_token = data.get('nextPageToken', None)
+    print(f"total_rows={total_rows}")
+    while total_rows > 0:        
+        print(f"Total subscriptions part of the tenant: {len(items)}")
+        if not next_page_token:
+            break  # Break the loop if no nextPageToken found
+        # Update URL to get the next page
+        url = f"https://{base_url}/search/config/page"
         payload = json.dumps({
             "limit": limit,
-            "withResourceJson": False,
-            "query": f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\"",
-            "id": "d4c069a2-8383-4d49-8cbe-a3f020ddbcb8",
-            "timeRange": {
-                "type": "relative",
-                "value": {"unit": "hour", "amount": 24},
-                "relativeTimeType": "BACKWARD"
-            },
-            "heuristicSearch": True,
-            "nextPageToken": next_page_token
+            "pageToken": next_page_token,
         })
 
-        try:
-            response = requests.post(url, headers=headers, data=payload)
-            response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
-        except requests.exceptions.RequestException as err:
-            print("Oops! An exception occurred in get_subscriptions_by_tenant, ", err)
-            return None
+        response = requests.post(url, headers=headers, data=payload)
+        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
 
         json_response = response.json()
-        subscriptions.extend(json_response['data']['items'])
-
-    return {
-        "data": {
-            "items": subscriptions
-        }
-    }
+        # Append the items from the next page to items list
+        items.extend(json_response['items'])
+        total_rows = json_response['totalRows']
+        next_page_token = json_response.get('nextPageToken', None)
+    
+    return {"data": {"items": items}}
 
 
 def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
-    tenant_subscriptions = get_subscriptions_by_tenant(base_url, token, azure_tenant_id)
+    tenant_subscriptions = get_subscriptions_by_tenant(base_url, token, azure_tenant_id) 
+    
     # Map account IDs to account names. Create empty dict if no subscriptions.
     tenant_account_ids = {
-        item['accountId']: item['name'] 
+        item['accountId']: item['accountName'] 
         for item in tenant_subscriptions['data']['items']
     } if tenant_subscriptions else {}
 
@@ -240,6 +227,7 @@ def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
         if account_id in tenant_account_ids:
             account_name = tenant_account_ids[account_id]
             unique_account_ids.add((account_id, account_name))
+    
     return list(unique_account_ids)
 
 
@@ -378,7 +366,7 @@ def main():
     # print(f"Here is the acr list: {acr_list}")
 
     unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
-    # print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
+    print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
 
     authorized_subscriptions = read_authorized_subscriptions()
     unauthorized_subscriptions = read_unauthorized_subscriptions()
