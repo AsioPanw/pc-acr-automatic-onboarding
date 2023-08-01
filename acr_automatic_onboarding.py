@@ -298,7 +298,7 @@ def read_authorized_subscriptions():
 
 
 def read_unauthorized_subscriptions():
-    with open('unauthorized_account_name.conf', 'r') as f:
+    with open('unauthorized_sub.conf', 'r') as f:
         subscriptions = [line.strip() for line in f]
     return subscriptions
 
@@ -369,10 +369,10 @@ def main():
     # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
     acr_list = get_acr(url, token)
-    print(f"Here is the acr list: {acr_list}")
+    # print(f"Here is the acr list: {acr_list}")
 
     unique_account_ids = get_unique_account_ids(url, token, acr_list, subscriptions, azure_tenant_id)
-    print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
+    # print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
 
     authorized_subscriptions = read_authorized_subscriptions()
     unauthorized_subscriptions = read_unauthorized_subscriptions()

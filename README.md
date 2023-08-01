@@ -3,17 +3,17 @@
 This Python script is designed to streamline and automate the process of onboarding Azure Container Registries (ACR) into Prisma Cloud. Given the complexity and potential volume of Azure subscriptions and container registries within those subscriptions, manually managing them can become a significant challenge. This script offers a solution by automatically onboard all ACR into Compute by listing  into Prisma Cloud and subsequently onboarding the respective container registries. 
 
 ## Account Onboarding Information
-In this script, you have the ability to selectively onboard container registries across various Azure subscriptions into Prisma Cloud by specifying the Azure subscriptions ID in the `authorized_subscriptions.conf` configuration file.
+In this script, you have the ability to selectively onboard container registries across various Azure subscriptions into Prisma Cloud by specifying the Azure subscriptions ID in the `authorized_sub.conf` configuration file.
 
 However, it's important to note the following behavior:
 
 **Onboarding All Registries Across All Subscriptions**
 
-If you leave the `authorized_subscriptions.conf` file empty, the script will onboard all registries across all Azure subscriptions that have been onboarded into Prisma Cloud.
+If you leave the `authorized_sub.conf` file empty, the script will onboard all registries across all Azure subscriptions that have been onboarded into Prisma Cloud.
 
 **Preventing Specific Prisma Cloud Accounts from Onboarding**
 
-You can prevent specific Prisma Cloud accounts from being onboarded using the `unauthorized_account_name.conf` file. This file allows you to list the Prisma Cloud Account Names (not the Azure subscription names) that you do not want to be onboarded.
+You can prevent specific Prisma Cloud accounts from being onboarded using the `unauthorized_sub.conf` file. This file allows you to list the Prisma Cloud Account Names (not the Azure subscription names) that you do not want to be onboarded.
 
 ## Pre requesites from Azure
 
