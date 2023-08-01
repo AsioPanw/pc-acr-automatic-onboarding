@@ -151,89 +151,96 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
     # print(f"Response text: {response.text}")
     return response
 
-
-def get_unique_account_ids(base_url, token, json_data, subscriptions, azure_tenant_id):
-    unique_account_ids = set()
-    for resource in json_data['resources']:
-        for subscription in subscriptions['resources']:
-            if resource['accountId'] == subscription['accountId']:
-                unified_asset_id = subscription['unifiedAssetId']
-                if is_subscription_belongs_to_tenant(base_url, token, unified_asset_id, azure_tenant_id):
-                    account_id = resource['accountId']
-                    account_name = subscription['name']
-                    unique_account_ids.add((account_id, account_name))
-    return list(unique_account_ids)
-
-
-def is_subscription_belongs_to_tenant(base_url, token, unified_asset_id, azure_tenant_id):
-    url = f"https://{base_url}/uai/v1/asset"
+def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
+    url = f"https://{base_url}/search/config"
     headers = {"content-type": "application/json; charset=UTF-8",
                "x-redlock-auth": token}
-
-    payload = json.dumps({"type":"asset","assetId": unified_asset_id})
-    try:
-        response = requests.post(url, headers=headers, data=payload)
-        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
-    except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_tenant_id_per_subscription, ", err)
-        return None
     
-    json_response = response.json()    
-    return json_response['data']['asset']['data']['tenantId'] == azure_tenant_id
+    limit = 1000
+    next_page_token = None
+    subscriptions = []
 
-
-def get_subscriptions(base_url, token):
-    url = f"https://{base_url}/resource/scan_info"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "x-redlock-auth": token}
-
+    # Initial request to get totalRows
     payload = json.dumps({
-        "filters": [            
-            {
-                "name": "includeEventForeignEntities",
-                "operator": "=",
-                "value": "false"
-            },
-            {
-                "name": "cloud.service",
-                "operator": "=",
-                "value": "Azure Subscriptions"
-            },
-            {
-                "name": "cloud.type",
-                "operator": "=",
-                "value": "azure"
-            },
-            {
-                "name": "resource.type",
-                "operator": "=",
-                "value": "Azure Subscriptions"
-            },
-            {
-                "name": "scan.status",
-                "operator": "=",
-                "value": "all"
-            },
-            {
-                "name": "decorateWithDerivedRRN",
-                "operator": "=",
-                "value": False
-            }
-        ],
-        "limit": 10000,
+        "limit": limit,
+        "withResourceJson": False,
+        "query": f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\"",
+        "id": "d4c069a2-8383-4d49-8cbe-a3f020ddbcb8",
         "timeRange": {
-            "type": "to_now",
-            "value": "epoch"
-        }
+            "type": "relative",
+            "value": {"unit": "hour", "amount": 24},
+            "relativeTimeType": "BACKWARD"
+        },
+        "heuristicSearch": True,
+        "nextPageToken": next_page_token
     })
+
     try:
         response = requests.post(url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_subscriptions, ", err)
+        print("Oops! An exception occurred in get_subscriptions_by_tenant, ", err)
         return None
 
-    return response.json()
+    json_response = response.json()
+    total_rows = json_response['data']['totalRows']
+    subscriptions.extend(json_response['data']['items'])
+
+    # Calculate total pages. 
+    total_pages = total_rows // limit
+    # If there is a remainder
+    total_pages += (total_rows % limit > 0)
+
+    # Request the rest of the pages
+    for _ in range(1, total_pages):
+        next_page_token = json_response['data']['nextPageToken']
+
+        payload = json.dumps({
+            "limit": limit,
+            "withResourceJson": False,
+            "query": f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\"",
+            "id": "d4c069a2-8383-4d49-8cbe-a3f020ddbcb8",
+            "timeRange": {
+                "type": "relative",
+                "value": {"unit": "hour", "amount": 24},
+                "relativeTimeType": "BACKWARD"
+            },
+            "heuristicSearch": True,
+            "nextPageToken": next_page_token
+        })
+
+        try:
+            response = requests.post(url, headers=headers, data=payload)
+            response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+        except requests.exceptions.RequestException as err:
+            print("Oops! An exception occurred in get_subscriptions_by_tenant, ", err)
+            return None
+
+        json_response = response.json()
+        subscriptions.extend(json_response['data']['items'])
+
+    return {
+        "data": {
+            "items": subscriptions
+        }
+    }
+
+
+def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
+    tenant_subscriptions = get_subscriptions_by_tenant(base_url, token, azure_tenant_id)
+    # Map account IDs to account names. Create empty dict if no subscriptions.
+    tenant_account_ids = {
+        item['accountId']: item['name'] 
+        for item in tenant_subscriptions['data']['items']
+    } if tenant_subscriptions else {}
+
+    unique_account_ids = set()
+    for resource in acr_list['resources']:
+        account_id = resource['accountId']
+        if account_id in tenant_account_ids:
+            account_name = tenant_account_ids[account_id]
+            unique_account_ids.add((account_id, account_name))
+    return list(unique_account_ids)
 
 
 def get_acr(base_url, token):
@@ -364,14 +371,13 @@ def main():
         return
 
     compute_url = get_compute_url(url, token)    
-    subscriptions = get_subscriptions(url, token)
     compute_token = login_compute(compute_url, identity, secret)
     # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
     acr_list = get_acr(url, token)
     # print(f"Here is the acr list: {acr_list}")
 
-    unique_account_ids = get_unique_account_ids(url, token, acr_list, subscriptions, azure_tenant_id)
+    unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
     # print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
 
     authorized_subscriptions = read_authorized_subscriptions()
