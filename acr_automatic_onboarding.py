@@ -152,8 +152,7 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
     return response
 
 
-def get_unique_account_ids(base_url, token, json_data, azure_tenant_id):
-    subscriptions = get_subscriptions(base_url, token)
+def get_unique_account_ids(base_url, token, json_data, subscriptions, azure_tenant_id):
     unique_account_ids = set()
     for resource in json_data['resources']:
         for subscription in subscriptions['resources']:
@@ -161,7 +160,7 @@ def get_unique_account_ids(base_url, token, json_data, azure_tenant_id):
                 unified_asset_id = subscription['unifiedAssetId']
                 if is_subscription_belongs_to_tenant(base_url, token, unified_asset_id, azure_tenant_id):
                     account_id = resource['accountId']
-                    account_name = resource['accountName']
+                    account_name = subscription['name']
                     unique_account_ids.add((account_id, account_name))
     return list(unique_account_ids)
 
@@ -364,15 +363,16 @@ def main():
         print("Error: Unable to authenticate.")
         return
 
-    compute_url = get_compute_url(url, token)
+    compute_url = get_compute_url(url, token)    
+    subscriptions = get_subscriptions(url, token)
     compute_token = login_compute(compute_url, identity, secret)
     # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
     acr_list = get_acr(url, token)
     print(f"Here is the acr list: {acr_list}")
 
-    unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
-    # print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
+    unique_account_ids = get_unique_account_ids(url, token, acr_list, subscriptions, azure_tenant_id)
+    print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
 
     authorized_subscriptions = read_authorized_subscriptions()
     unauthorized_subscriptions = read_unauthorized_subscriptions()
