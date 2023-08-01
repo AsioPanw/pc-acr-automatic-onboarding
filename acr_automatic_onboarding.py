@@ -152,13 +152,89 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
     return response
 
 
-def get_unique_account_ids(json_data):
+def get_unique_account_ids(base_url, token, json_data, azure_tenant_id):
+    subscriptions = get_subscriptions(base_url, token)
     unique_account_ids = set()
     for resource in json_data['resources']:
-        account_id = resource['accountId']
-        account_name = resource['accountName']
-        unique_account_ids.add((account_id, account_name))
+        for subscription in subscriptions['resources']:
+            if resource['accountId'] == subscription['accountId']:
+                unified_asset_id = subscription['unifiedAssetId']
+                if is_subscription_belongs_to_tenant(base_url, token, unified_asset_id, azure_tenant_id):
+                    account_id = resource['accountId']
+                    account_name = resource['accountName']
+                    unique_account_ids.add((account_id, account_name))
     return list(unique_account_ids)
+
+
+def is_subscription_belongs_to_tenant(base_url, token, unified_asset_id, azure_tenant_id):
+    url = f"https://{base_url}/uai/v1/asset"
+    headers = {"content-type": "application/json; charset=UTF-8",
+               "x-redlock-auth": token}
+
+    payload = json.dumps({"type":"asset","assetId": unified_asset_id})
+    try:
+        response = requests.post(url, headers=headers, data=payload)
+        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+    except requests.exceptions.RequestException as err:
+        print("Oops! An exception occurred in get_tenant_id_per_subscription, ", err)
+        return None
+    
+    json_response = response.json()    
+    return json_response['data']['asset']['data']['tenantId'] == azure_tenant_id
+
+
+def get_subscriptions(base_url, token):
+    url = f"https://{base_url}/resource/scan_info"
+    headers = {"content-type": "application/json; charset=UTF-8",
+               "x-redlock-auth": token}
+
+    payload = json.dumps({
+        "filters": [            
+            {
+                "name": "includeEventForeignEntities",
+                "operator": "=",
+                "value": "false"
+            },
+            {
+                "name": "cloud.service",
+                "operator": "=",
+                "value": "Azure Subscriptions"
+            },
+            {
+                "name": "cloud.type",
+                "operator": "=",
+                "value": "azure"
+            },
+            {
+                "name": "resource.type",
+                "operator": "=",
+                "value": "Azure Subscriptions"
+            },
+            {
+                "name": "scan.status",
+                "operator": "=",
+                "value": "all"
+            },
+            {
+                "name": "decorateWithDerivedRRN",
+                "operator": "=",
+                "value": False
+            }
+        ],
+        "limit": 10000,
+        "timeRange": {
+            "type": "to_now",
+            "value": "epoch"
+        }
+    })
+    try:
+        response = requests.post(url, headers=headers, data=payload)
+        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+    except requests.exceptions.RequestException as err:
+        print("Oops! An exception occurred in get_subscriptions, ", err)
+        return None
+
+    return response.json()
 
 
 def get_acr(base_url, token):
@@ -199,7 +275,7 @@ def get_acr(base_url, token):
                 "value": False
             }
         ],
-        "limit": 100,
+        "limit": 10000,
         "timeRange": {
             "type": "to_now",
             "value": "epoch"
@@ -293,9 +369,9 @@ def main():
     # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
     acr_list = get_acr(url, token)
-    # print(f"Here is the acr list: {acr_list}")
+    print(f"Here is the acr list: {acr_list}")
 
-    unique_account_ids = get_unique_account_ids(acr_list)
+    unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
     # print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
 
     authorized_subscriptions = read_authorized_subscriptions()
