@@ -160,7 +160,7 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     next_page_token = None
     subscriptions = []
     rql = f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\""
-    print(f"RQL is: {rql}")
+    # print(f"RQL is: {rql}")
 
     # Initial request to get totalRows
     payload = json.dumps({
@@ -188,7 +188,6 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     total_rows = json_response['data']['totalRows']
     data = json_response.get('data', {})
     next_page_token = data.get('nextPageToken', None)
-    print(f"total_rows={total_rows}")
     while total_rows > 0:        
         print(f"Total subscriptions part of the tenant: {len(items)}")
         if not next_page_token:
@@ -363,10 +362,10 @@ def main():
     # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
     acr_list = get_acr(url, token)
-    # print(f"Here is the acr list: {acr_list}")
+    print(f"Number of container registries: {len(acr_list['resources'])}")
 
     unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
-    print(f"List of azure cloud accounts that contains ACR: {unique_account_ids}")
+    print(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
 
     authorized_subscriptions = read_authorized_subscriptions()
     unauthorized_subscriptions = read_unauthorized_subscriptions()
