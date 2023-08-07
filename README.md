@@ -70,5 +70,9 @@ export AZURE_TENANT_ID="__REDACTED__"
 ```bash
 python3 -m virtualenv venv && source venv/bin/activate
 pip install -r requirements.txt
-python3 acr_automatic_onboarding.py
+python3 acr_automatic_onboarding.py --help
+## Onboard ACR container registries from CSPM
+python3 acr_automatic_onboarding.py --onboard
+## Provides a summary of registries with the number of images in descending order
+python3 acr_automatic_onboarding.py --report
 ```

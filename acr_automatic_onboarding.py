@@ -3,7 +3,7 @@ __author__ = "Simon Melotte"
 import os
 import json
 import requests
-
+import argparse
 from dotenv import load_dotenv
 
 
@@ -70,6 +70,36 @@ def get_container_registries(base_url, token):
     # print(f"Response headers: {response.headers}")
     # print(f"Response text: {response.text}")
     return response.json()
+
+
+def get_images_number_per_regristry(base_url, token):
+    url = f"{base_url}/api/v1/registry?compact=true?project=Central+Console"
+    headers = {"content-type": "application/json; charset=UTF-8",
+               "Authorization": "Bearer " + token}
+
+    try:
+        response = requests.request("GET", url, headers=headers)
+        response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
+    except requests.exceptions.RequestException as err:
+        print("Oops! An exception occurred in get_container_registries, ", err)
+        print(f"Error text: {response.text}")
+        return None
+    
+    
+    response_json = response.json()
+    registry_count = {}
+
+    for item in response_json:
+        for tag in item['tags']:
+            registry = tag['registry']
+            if registry not in registry_count:
+                registry_count[registry] = 1
+            else:
+                registry_count[registry] += 1
+
+    # Sort the dictionary in descending order by value
+    sorted_registry_count = dict(sorted(registry_count.items(), key=lambda item: item[1], reverse=True))
+    return sorted_registry_count
 
 
 def set_cloud_scan_rules(base_url, token, account):
@@ -339,6 +369,11 @@ def login_compute(base_url, access_key, secret_key):
 
 
 def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--report', action='store_true', help='Provides a summary of registries with the number of images in descending order.')
+    parser.add_argument('--onboard', action='store_true', help='Onboard ACR container registries from CSPMN.')
+    args = parser.parse_args()
+
     load_dotenv()
     url = os.environ.get("PRISMA_API_URL")
     identity = os.environ.get("PRISMA_ACCESS_KEY")
@@ -352,38 +387,50 @@ def main():
         return
 
     token = login_saas(url, identity, secret)
+    compute_url = get_compute_url(url, token)    
+    compute_token = login_compute(compute_url, identity, secret)
+    # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
     if token is None:
         print("Error: Unable to authenticate.")
         return
 
-    compute_url = get_compute_url(url, token)    
-    compute_token = login_compute(compute_url, identity, secret)
-    # print(f"Here is the compute url: {compute_url} and token {compute_token}")
+    if args.report:
+        print("Running in report mode")
+        registry_count = get_images_number_per_regristry(compute_url, compute_token)
+        
+        for registry, count in registry_count.items():
+            print(f"Registry: {registry}, Number of Images: {count}")
+    elif args.onboard:
+        print("Running in onboard mode")
+        acr_list = get_acr(url, token)
+        print(f"Number of container registries: {len(acr_list['resources'])}")
 
-    acr_list = get_acr(url, token)
-    print(f"Number of container registries: {len(acr_list['resources'])}")
+        unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
+        print(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
 
-    unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
-    print(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
+        authorized_subscriptions = read_authorized_subscriptions()
+        unauthorized_subscriptions = read_unauthorized_subscriptions()
 
-    authorized_subscriptions = read_authorized_subscriptions()
-    unauthorized_subscriptions = read_unauthorized_subscriptions()
+        existing_container_registries = get_container_registries(compute_url, compute_token)
 
-    existing_container_registries = get_container_registries(compute_url, compute_token)
-
-    # create a cloud account in the compute part with he service key
-    for account in unique_account_ids:
-        if not any(sub in account[1] for sub in unauthorized_subscriptions):
-            if not authorized_subscriptions or account[0] in authorized_subscriptions:
-                create_cloud_account(compute_url, compute_token, account, azure_client_id,
-                                     azure_client_secret, azure_tenant_id)
-                set_cloud_scan_rules(compute_url, compute_token, account)
-                add_container_registries(compute_url, compute_token, existing_container_registries, acr_list, account)
+        # create a cloud account in the compute part with he service key
+        for account in unique_account_ids:
+            if not any(sub in account[1] for sub in unauthorized_subscriptions):
+                if not authorized_subscriptions or account[0] in authorized_subscriptions:
+                    create_cloud_account(compute_url, compute_token, account, azure_client_id,
+                                         azure_client_secret, azure_tenant_id)
+                    set_cloud_scan_rules(compute_url, compute_token, account)
+                    add_container_registries(compute_url, compute_token, existing_container_registries, acr_list, account)
+                else:
+                    print(f"Account {account[0]} is not authorized.")
             else:
-                print(f"Account {account[0]} is not authorized.")
-        else:
-            print(f"Account {account[0]} is explicit denied by the configuration.")
+                print(f"Account {account[0]} is explicit denied by the configuration.")
+    else:
+        print("No arguments provided.")
+
+
+
 
 
 if __name__ == "__main__":
