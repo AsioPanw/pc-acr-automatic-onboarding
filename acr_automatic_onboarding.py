@@ -10,13 +10,15 @@ from dotenv import load_dotenv
 def add_container_registries(base_url, token, existing_container_registries, acr_list, account):
     accountId, accountName = account  # Unpack account tuple
     url = f"{base_url}/api/v1/settings/registry?project=Central+Console&scanLater=false"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}
+    headers = {"content-type": "application/json; charset=UTF-8", "Authorization": "Bearer " + token}
 
-    for registry in acr_list['resources']:
-        if registry['accountId'] == accountId:
+    for registry in acr_list["resources"]:
+        if registry["accountId"] == accountId:
             # Check if the registry already exists
-            if not any(existing_registry['registry'] == registry['name'] + ".azurecr.io" for existing_registry in existing_container_registries['specifications']):
+            if not any(
+                existing_registry["registry"] == registry["name"] + ".azurecr.io"
+                for existing_registry in existing_container_registries["specifications"]
+            ):
                 new_registry = {
                     "version": "azure",
                     "registry": f"{registry['name'].lower()}.azurecr.io",
@@ -30,11 +32,11 @@ def add_container_registries(base_url, token, existing_container_registries, acr
                     "cap": 5,
                     "scanners": 2,
                     "versionPattern": "",
-                    "gitlabRegistrySpec": {}
+                    "gitlabRegistrySpec": {},
                 }
 
                 # Add the new registry to the specifications list
-                existing_container_registries['specifications'].append(new_registry)
+                existing_container_registries["specifications"].append(new_registry)
                 print(f"Registry to be added: {registry['name'].lower()}.azurecr.io")
             else:
                 print(f"Registry {registry['name']}.azurecr.io already exists in Prisma Cloud")
@@ -53,8 +55,17 @@ def add_container_registries(base_url, token, existing_container_registries, acr
     print(f"All registry for subscription {accountName} have been added successfully")
 
 
-def onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
-                     azure_client_secret, acr_list_from_cspm, acr_list_from_cwp, azure_tenant_id):
+def onboard_workflow(
+    url,
+    token,
+    compute_url,
+    compute_token,
+    azure_client_id,
+    azure_client_secret,
+    acr_list_from_cspm,
+    acr_list_from_cwp,
+    azure_tenant_id,
+):
     print(f"Number of container registries to onboard: {len(acr_list_from_cspm['resources'])}")
 
     unique_account_ids = get_unique_account_ids(url, token, acr_list_from_cspm, azure_tenant_id)
@@ -67,11 +78,11 @@ def onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
     for account in unique_account_ids:
         if not any(sub in account[1] for sub in unauthorized_subscriptions):
             if not authorized_subscriptions or account[0] in authorized_subscriptions:
-                create_cloud_account(compute_url, compute_token, account, azure_client_id,
-                                     azure_client_secret, azure_tenant_id)
+                create_cloud_account(
+                    compute_url, compute_token, account, azure_client_id, azure_client_secret, azure_tenant_id
+                )
                 set_cloud_scan_rules(compute_url, compute_token, account)
-                add_container_registries(compute_url, compute_token, acr_list_from_cwp,
-                                         acr_list_from_cspm, account)
+                add_container_registries(compute_url, compute_token, acr_list_from_cwp, acr_list_from_cspm, account)
             else:
                 print(f"Account {account[0]} is not authorized.")
         else:
@@ -80,8 +91,7 @@ def onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
 
 def get_container_registries(base_url, token):
     url = f"{base_url}/api/v1/settings/registry?project=Central+Console"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}
+    headers = {"content-type": "application/json; charset=UTF-8", "Authorization": "Bearer " + token}
 
     try:
         response = requests.request("GET", url, headers=headers)
@@ -99,8 +109,7 @@ def get_container_registries(base_url, token):
 
 def get_images_number_per_regristry(base_url, token):
     url = f"{base_url}/api/v1/registry?compact=true?project=Central+Console"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}
+    headers = {"content-type": "application/json; charset=UTF-8", "Authorization": "Bearer " + token}
 
     try:
         response = requests.request("GET", url, headers=headers)
@@ -114,8 +123,8 @@ def get_images_number_per_regristry(base_url, token):
     registry_count = {}
 
     for item in response_json:
-        for tag in item['tags']:
-            registry = tag['registry']
+        for tag in item["tags"]:
+            registry = tag["registry"]
             if registry not in registry_count:
                 registry_count[registry] = 1
             else:
@@ -130,18 +139,19 @@ def set_cloud_scan_rules(base_url, token, account):
     accountId, accountName = account  # Unpack account tuple
 
     url = f"{base_url}/api/v1/cloud-scan-rules?project=Central+Console"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}
+    headers = {"content-type": "application/json; charset=UTF-8", "Authorization": "Bearer " + token}
 
-    payload = json.dumps([
-        {
-            "credentialId": f"{accountId}-servicekey",
-            "discoveryEnabled": False,
-            "agentlessScanSpec": {},
-            "serverlessScanSpec": {},
-            "awsRegionType": "regular"
-        }
-    ])
+    payload = json.dumps(
+        [
+            {
+                "credentialId": f"{accountId}-servicekey",
+                "discoveryEnabled": False,
+                "agentlessScanSpec": {},
+                "serverlessScanSpec": {},
+                "awsRegionType": "regular",
+            }
+        ]
+    )
 
     try:
         response = requests.request("PUT", url, headers=headers, data=payload)
@@ -156,41 +166,38 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
     accountId, accountName = account  # Unpack account tuple
 
     url = f"{base_url}/api/v1/credentials?project=Central+Console"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}
+    headers = {"content-type": "application/json; charset=UTF-8", "Authorization": "Bearer " + token}
 
-    secret_json = json.dumps({
-        "clientId": azure_client_id,
-        "clientSecret": f"{azure_client_secret}",
-        "tenantId": f"{azure_tenant_id}",
-        "subscriptionId": f"{accountId}",
-        "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
-        "resourceManagerEndpointUrl": "https://management.azure.com/",
-        "activeDirectoryGraphResourceId": "https://graph.windows.net/",
-        "sqlManagementEndpointUrl": "https://management.core.windows.net:8443/",
-        "galleryEndpointUrl": "https://gallery.azure.com/",
-        "managementEndpointUrl": "https://management.core.windows.net/"
-    })
+    secret_json = json.dumps(
+        {
+            "clientId": azure_client_id,
+            "clientSecret": f"{azure_client_secret}",
+            "tenantId": f"{azure_tenant_id}",
+            "subscriptionId": f"{accountId}",
+            "activeDirectoryEndpointUrl": "https://login.microsoftonline.com",
+            "resourceManagerEndpointUrl": "https://management.azure.com/",
+            "activeDirectoryGraphResourceId": "https://graph.windows.net/",
+            "sqlManagementEndpointUrl": "https://management.core.windows.net:8443/",
+            "galleryEndpointUrl": "https://gallery.azure.com/",
+            "managementEndpointUrl": "https://management.core.windows.net/",
+        }
+    )
 
-    payload = json.dumps({
-        "caCert": "",
-        "secret": {
-            "encrypted": "",
-            "plain": secret_json
-        },
-        "apiToken": {
-            "encrypted": "",
-            "plain": ""
-        },
-        "description": (f"{accountName}-servicekey")[:30],
-        "skipVerify": False,
-        "accountID": "",
-        "useAWSRole": False,
-        "_id": f"{accountId}-servicekey",
-        "type": "azure",
-        "accountName": f"{accountName}-servicekey",
-        "useSTSRegionalEndpoint": False
-    })
+    payload = json.dumps(
+        {
+            "caCert": "",
+            "secret": {"encrypted": "", "plain": secret_json},
+            "apiToken": {"encrypted": "", "plain": ""},
+            "description": (f"{accountName}-servicekey")[:30],
+            "skipVerify": False,
+            "accountID": "",
+            "useAWSRole": False,
+            "_id": f"{accountId}-servicekey",
+            "type": "azure",
+            "accountName": f"{accountName}-servicekey",
+            "useSTSRegionalEndpoint": False,
+        }
+    )
 
     try:
         response = requests.request("POST", url, headers=headers, data=payload)
@@ -208,26 +215,21 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
 
 def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     url = f"https://{base_url}/search/config"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "x-redlock-auth": token}
+    headers = {"content-type": "application/json; charset=UTF-8", "x-redlock-auth": token}
 
     limit = 100
     next_page_token = None
-    subscriptions = []
     rql = f"config from cloud.resource where cloud.type = 'azure' AND api.name = 'azure-subscription-list' AND json.rule = tenantId equals \"{azure_tenant_id}\""
-    # print(f"RQL is: {rql}")
 
     # Initial request to get totalRows
-    payload = json.dumps({
-        "limit": limit,
-        "query": rql,
-        "timeRange": {
-            "type": "relative",
-            "value": {"unit": "hour", "amount": 24},
-            "relativeTimeType": "BACKWARD"
-        },
-        "nextPageToken": next_page_token
-    })
+    payload = json.dumps(
+        {
+            "limit": limit,
+            "query": rql,
+            "timeRange": {"type": "relative", "value": {"unit": "hour", "amount": 24}, "relativeTimeType": "BACKWARD"},
+            "nextPageToken": next_page_token,
+        }
+    )
 
     try:
         response = requests.post(url, headers=headers, data=payload)
@@ -239,29 +241,31 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     json_response = response.json()
 
     # Initialize items with first page data
-    items = json_response['data']['items']
-    total_rows = json_response['data']['totalRows']
-    data = json_response.get('data', {})
-    next_page_token = data.get('nextPageToken', None)
+    items = json_response["data"]["items"]
+    total_rows = json_response["data"]["totalRows"]
+    data = json_response.get("data", {})
+    next_page_token = data.get("nextPageToken", None)
     while total_rows > 0:
         print(f"Total subscriptions part of the tenant: {len(items)}")
         if not next_page_token:
             break  # Break the loop if no nextPageToken found
         # Update URL to get the next page
         url = f"https://{base_url}/search/config/page"
-        payload = json.dumps({
-            "limit": limit,
-            "pageToken": next_page_token,
-        })
+        payload = json.dumps(
+            {
+                "limit": limit,
+                "pageToken": next_page_token,
+            }
+        )
 
         response = requests.post(url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
 
         json_response = response.json()
         # Append the items from the next page to items list
-        items.extend(json_response['items'])
-        total_rows = json_response['totalRows']
-        next_page_token = json_response.get('nextPageToken', None)
+        items.extend(json_response["items"])
+        total_rows = json_response["totalRows"]
+        next_page_token = json_response.get("nextPageToken", None)
 
     return {"data": {"items": items}}
 
@@ -270,14 +274,15 @@ def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
     tenant_subscriptions = get_subscriptions_by_tenant(base_url, token, azure_tenant_id)
 
     # Map account IDs to account names. Create empty dict if no subscriptions.
-    tenant_account_ids = {
-        item['accountId']: item['accountName']
-        for item in tenant_subscriptions['data']['items']
-    } if tenant_subscriptions else {}
+    tenant_account_ids = (
+        {item["accountId"]: item["accountName"] for item in tenant_subscriptions["data"]["items"]}
+        if tenant_subscriptions
+        else {}
+    )
 
     unique_account_ids = set()
-    for resource in acr_list['resources']:
-        account_id = resource['accountId']
+    for resource in acr_list["resources"]:
+        account_id = resource["accountId"]
         if account_id in tenant_account_ids:
             account_name = tenant_account_ids[account_id]
             unique_account_ids.add((account_id, account_name))
@@ -287,48 +292,22 @@ def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
 
 def get_acr(base_url, token):
     url = f"https://{base_url}/resource/scan_info"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "x-redlock-auth": token}
+    headers = {"content-type": "application/json; charset=UTF-8", "x-redlock-auth": token}
 
-    payload = json.dumps({
-        "filters": [
-            {
-                "name": "includeEventForeignEntities",
-                "operator": "=",
-                "value": "false"
-            },
-            {
-                "name": "cloud.service",
-                "operator": "=",
-                "value": "Azure Container Registry"
-            },
-            {
-                "name": "cloud.type",
-                "operator": "=",
-                "value": "azure"
-            },
-            {
-                "name": "resource.type",
-                "operator": "=",
-                "value": "Azure Container Registry"
-            },
-            {
-                "name": "scan.status",
-                "operator": "=",
-                "value": "all"
-            },
-            {
-                "name": "decorateWithDerivedRRN",
-                "operator": "=",
-                "value": False
-            }
-        ],
-        "limit": 10000,
-        "timeRange": {
-            "type": "to_now",
-            "value": "epoch"
+    payload = json.dumps(
+        {
+            "filters": [
+                {"name": "includeEventForeignEntities", "operator": "=", "value": "false"},
+                {"name": "cloud.service", "operator": "=", "value": "Azure Container Registry"},
+                {"name": "cloud.type", "operator": "=", "value": "azure"},
+                {"name": "resource.type", "operator": "=", "value": "Azure Container Registry"},
+                {"name": "scan.status", "operator": "=", "value": "all"},
+                {"name": "decorateWithDerivedRRN", "operator": "=", "value": False},
+            ],
+            "limit": 10000,
+            "timeRange": {"type": "to_now", "value": "epoch"},
         }
-    })
+    )
 
     try:
         response = requests.post(url, headers=headers, data=payload)
@@ -341,21 +320,20 @@ def get_acr(base_url, token):
 
 
 def read_authorized_subscriptions():
-    with open('authorized_sub.conf', 'r') as f:
+    with open("authorized_sub.conf", "r") as f:
         subscriptions = [line.strip() for line in f]
     return subscriptions
 
 
 def read_unauthorized_subscriptions():
-    with open('unauthorized_sub.conf', 'r') as f:
+    with open("unauthorized_sub.conf", "r") as f:
         subscriptions = [line.strip() for line in f]
     return subscriptions
 
 
 def get_compute_url(base_url, token):
     url = f"https://{base_url}/meta_info"
-    headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}
+    headers = {"content-type": "application/json; charset=UTF-8", "Authorization": "Bearer " + token}
     try:
         response = requests.get(url, headers=headers)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
@@ -364,7 +342,7 @@ def get_compute_url(base_url, token):
         return None
 
     response_json = response.json()
-    return response_json.get('twistlockUrl', None)
+    return response_json.get("twistlockUrl", None)
 
 
 def login_saas(base_url, access_key, secret_key):
@@ -384,10 +362,7 @@ def login_saas(base_url, access_key, secret_key):
 def login_compute(base_url, access_key, secret_key):
     url = f"{base_url}/api/v1/authenticate"
 
-    payload = json.dumps({
-        "username": access_key,
-        "password": secret_key
-    })
+    payload = json.dumps({"username": access_key, "password": secret_key})
     headers = {"content-type": "application/json; charset=UTF-8"}
     response = requests.post(url, headers=headers, data=payload)
     return response.json()["token"]
@@ -395,10 +370,11 @@ def login_compute(base_url, access_key, secret_key):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--report', action='store_true',
-                        help='Provides a summary of registries with the number of images in descending order.')
-    parser.add_argument('--onboard', action='store_true', help='Onboard ACR container registries from CSPM.')
-    parser.add_argument('--update', action='store_true', help='Onboard newly added container registries.')
+    parser.add_argument(
+        "--report", action="store_true", help="Provides a summary of registries with the number of images in descending order."
+    )
+    parser.add_argument("--onboard", action="store_true", help="Onboard ACR container registries from CSPM.")
+    parser.add_argument("--update", action="store_true", help="Onboard newly added container registries.")
     args = parser.parse_args()
 
     load_dotenv()
@@ -410,7 +386,9 @@ def main():
     azure_tenant_id = os.environ.get("AZURE_TENANT_ID")
 
     if not url or not identity or not secret or not azure_client_id or not azure_client_secret or not azure_tenant_id:
-        print("Error: PRISMA_API_URL, PRISMA_ACCESS_KEY, PRISMA_SECRET_KEY, AZURE_CLIENT_ID, PRISMA_SECRET_KEY or AZURE_TENANT_ID environment variables are not set.")
+        print(
+            "Error: PRISMA_API_URL, PRISMA_ACCESS_KEY, PRISMA_SECRET_KEY, AZURE_CLIENT_ID, PRISMA_SECRET_KEY or AZURE_TENANT_ID environment variables are not set."
+        )
         return
 
     token = login_saas(url, identity, secret)
@@ -435,22 +413,43 @@ def main():
         acr_list_from_cwp = get_container_registries(compute_url, compute_token)
 
         # Extract the registry names and convert them to the appropriate format
-        registries_from_cwp = {resource['registry'] for resource in acr_list_from_cwp["specifications"]}
+        registries_from_cwp = {resource["registry"] for resource in acr_list_from_cwp["specifications"]}
 
         # Modify acr_list_from_cspm to exclude registries that are already onboarded
-        acr_list_from_cspm['resources'] = [resource for resource in acr_list_from_cspm['resources']
-                                           if f"{resource['name']}.azurecr.io" not in registries_from_cwp]
+        acr_list_from_cspm["resources"] = [
+            resource
+            for resource in acr_list_from_cspm["resources"]
+            if f"{resource['name']}.azurecr.io" not in registries_from_cwp
+        ]
 
-        onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
-                         azure_client_secret, acr_list_from_cspm, acr_list_from_cwp, azure_tenant_id)
+        onboard_workflow(
+            url,
+            token,
+            compute_url,
+            compute_token,
+            azure_client_id,
+            azure_client_secret,
+            acr_list_from_cspm,
+            acr_list_from_cwp,
+            azure_tenant_id,
+        )
 
     elif args.onboard:
         print("Running in onboard mode")
         acr_list_from_cspm = get_acr(url, token)
         acr_list_from_cwp = get_container_registries(compute_url, compute_token)
 
-        onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
-                         azure_client_secret, acr_list_from_cspm, acr_list_from_cwp, azure_tenant_id)
+        onboard_workflow(
+            url,
+            token,
+            compute_url,
+            compute_token,
+            azure_client_id,
+            azure_client_secret,
+            acr_list_from_cspm,
+            acr_list_from_cwp,
+            azure_tenant_id,
+        )
     else:
         print("No arguments provided.")
 
