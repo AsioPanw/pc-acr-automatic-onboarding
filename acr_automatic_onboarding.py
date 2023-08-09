@@ -53,6 +53,31 @@ def add_container_registries(base_url, token, existing_container_registries, acr
     print(f"All registry for subscription {accountName} have been added successfully")
 
 
+def onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
+                     azure_client_secret, acr_list_from_cspm, acr_list_from_cwp, azure_tenant_id):
+    print(f"Number of container registries to onboard: {len(acr_list_from_cspm['resources'])}")
+
+    unique_account_ids = get_unique_account_ids(url, token, acr_list_from_cspm, azure_tenant_id)
+    print(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
+
+    authorized_subscriptions = read_authorized_subscriptions()
+    unauthorized_subscriptions = read_unauthorized_subscriptions()
+
+    # Create a cloud account in the compute part with the service key
+    for account in unique_account_ids:
+        if not any(sub in account[1] for sub in unauthorized_subscriptions):
+            if not authorized_subscriptions or account[0] in authorized_subscriptions:
+                create_cloud_account(compute_url, compute_token, account, azure_client_id,
+                                     azure_client_secret, azure_tenant_id)
+                set_cloud_scan_rules(compute_url, compute_token, account)
+                add_container_registries(compute_url, compute_token, acr_list_from_cwp,
+                                         acr_list_from_cspm, account)
+            else:
+                print(f"Account {account[0]} is not authorized.")
+        else:
+            print(f"Account {account[0]} is explicitly denied by the configuration.")
+
+
 def get_container_registries(base_url, token):
     url = f"{base_url}/api/v1/settings/registry?project=Central+Console"
     headers = {"content-type": "application/json; charset=UTF-8",
@@ -84,8 +109,7 @@ def get_images_number_per_regristry(base_url, token):
         print("Oops! An exception occurred in get_container_registries, ", err)
         print(f"Error text: {response.text}")
         return None
-    
-    
+
     response_json = response.json()
     registry_count = {}
 
@@ -133,7 +157,7 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
 
     url = f"{base_url}/api/v1/credentials?project=Central+Console"
     headers = {"content-type": "application/json; charset=UTF-8",
-               "Authorization": "Bearer " + token}    
+               "Authorization": "Bearer " + token}
 
     secret_json = json.dumps({
         "clientId": azure_client_id,
@@ -181,11 +205,12 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
     # print(f"Response text: {response.text}")
     return response
 
+
 def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     url = f"https://{base_url}/search/config"
     headers = {"content-type": "application/json; charset=UTF-8",
                "x-redlock-auth": token}
-    
+
     limit = 100
     next_page_token = None
     subscriptions = []
@@ -218,7 +243,7 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     total_rows = json_response['data']['totalRows']
     data = json_response.get('data', {})
     next_page_token = data.get('nextPageToken', None)
-    while total_rows > 0:        
+    while total_rows > 0:
         print(f"Total subscriptions part of the tenant: {len(items)}")
         if not next_page_token:
             break  # Break the loop if no nextPageToken found
@@ -237,16 +262,16 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
         items.extend(json_response['items'])
         total_rows = json_response['totalRows']
         next_page_token = json_response.get('nextPageToken', None)
-    
+
     return {"data": {"items": items}}
 
 
 def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
-    tenant_subscriptions = get_subscriptions_by_tenant(base_url, token, azure_tenant_id) 
-    
+    tenant_subscriptions = get_subscriptions_by_tenant(base_url, token, azure_tenant_id)
+
     # Map account IDs to account names. Create empty dict if no subscriptions.
     tenant_account_ids = {
-        item['accountId']: item['accountName'] 
+        item['accountId']: item['accountName']
         for item in tenant_subscriptions['data']['items']
     } if tenant_subscriptions else {}
 
@@ -256,7 +281,7 @@ def get_unique_account_ids(base_url, token, acr_list, azure_tenant_id):
         if account_id in tenant_account_ids:
             account_name = tenant_account_ids[account_id]
             unique_account_ids.add((account_id, account_name))
-    
+
     return list(unique_account_ids)
 
 
@@ -370,8 +395,10 @@ def login_compute(base_url, access_key, secret_key):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--report', action='store_true', help='Provides a summary of registries with the number of images in descending order.')
-    parser.add_argument('--onboard', action='store_true', help='Onboard ACR container registries from CSPMN.')
+    parser.add_argument('--report', action='store_true',
+                        help='Provides a summary of registries with the number of images in descending order.')
+    parser.add_argument('--onboard', action='store_true', help='Onboard ACR container registries from CSPM.')
+    parser.add_argument('--update', action='store_true', help='Onboard newly added container registries.')
     args = parser.parse_args()
 
     load_dotenv()
@@ -387,7 +414,7 @@ def main():
         return
 
     token = login_saas(url, identity, secret)
-    compute_url = get_compute_url(url, token)    
+    compute_url = get_compute_url(url, token)
     compute_token = login_compute(compute_url, identity, secret)
     # print(f"Here is the compute url: {compute_url} and token {compute_token}")
 
@@ -398,39 +425,34 @@ def main():
     if args.report:
         print("Running in report mode")
         registry_count = get_images_number_per_regristry(compute_url, compute_token)
-        
+
         for registry, count in registry_count.items():
             print(f"Registry: {registry}, Number of Images: {count}")
+    if args.update:
+        print("Running in update mode")
+
+        acr_list_from_cspm = get_acr(url, token)
+        acr_list_from_cwp = get_container_registries(compute_url, compute_token)
+
+        # Extract the registry names and convert them to the appropriate format
+        registries_from_cwp = {resource['registry'] for resource in acr_list_from_cwp["specifications"]}
+
+        # Modify acr_list_from_cspm to exclude registries that are already onboarded
+        acr_list_from_cspm['resources'] = [resource for resource in acr_list_from_cspm['resources']
+                                           if f"{resource['name']}.azurecr.io" not in registries_from_cwp]
+
+        onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
+                         azure_client_secret, acr_list_from_cspm, acr_list_from_cwp, azure_tenant_id)
+
     elif args.onboard:
         print("Running in onboard mode")
-        acr_list = get_acr(url, token)
-        print(f"Number of container registries: {len(acr_list['resources'])}")
+        acr_list_from_cspm = get_acr(url, token)
+        acr_list_from_cwp = get_container_registries(compute_url, compute_token)
 
-        unique_account_ids = get_unique_account_ids(url, token, acr_list, azure_tenant_id)
-        print(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
-
-        authorized_subscriptions = read_authorized_subscriptions()
-        unauthorized_subscriptions = read_unauthorized_subscriptions()
-
-        existing_container_registries = get_container_registries(compute_url, compute_token)
-
-        # create a cloud account in the compute part with he service key
-        for account in unique_account_ids:
-            if not any(sub in account[1] for sub in unauthorized_subscriptions):
-                if not authorized_subscriptions or account[0] in authorized_subscriptions:
-                    create_cloud_account(compute_url, compute_token, account, azure_client_id,
-                                         azure_client_secret, azure_tenant_id)
-                    set_cloud_scan_rules(compute_url, compute_token, account)
-                    add_container_registries(compute_url, compute_token, existing_container_registries, acr_list, account)
-                else:
-                    print(f"Account {account[0]} is not authorized.")
-            else:
-                print(f"Account {account[0]} is explicit denied by the configuration.")
+        onboard_workflow(url, token, compute_url, compute_token, azure_client_id,
+                         azure_client_secret, acr_list_from_cspm, acr_list_from_cwp, azure_tenant_id)
     else:
         print("No arguments provided.")
-
-
-
 
 
 if __name__ == "__main__":
