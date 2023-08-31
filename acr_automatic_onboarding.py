@@ -4,7 +4,11 @@ import os
 import json
 import requests
 import argparse
+import logging
 from dotenv import load_dotenv
+
+# Create a logger object
+logger = logging.getLogger()
 
 
 def add_container_registries(base_url, token, existing_container_registries, acr_list, account):
@@ -37,9 +41,9 @@ def add_container_registries(base_url, token, existing_container_registries, acr
 
                 # Add the new registry to the specifications list
                 existing_container_registries["specifications"].append(new_registry)
-                print(f"Registry to be added: {registry['name'].lower()}.azurecr.io")
+                logger.info(f"Registry to be added: {registry['name'].lower()}.azurecr.io")
             else:
-                print(f"Registry {registry['name']}.azurecr.io already exists in Prisma Cloud")
+                logger.info(f"Registry {registry['name']}.azurecr.io already exists in Prisma Cloud")
 
     # Convert the updated registries to JSON
     payload = json.dumps(existing_container_registries)
@@ -48,11 +52,11 @@ def add_container_registries(base_url, token, existing_container_registries, acr
         response = requests.request("PUT", url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in add_container_registries, ", err)
-        print(f"Error text: {response.text}")
+        logger.error("Oops! An exception occurred in add_container_registries, ", err)
+        logger.error(f"{response.text}")
         return None
 
-    print(f"All registry for subscription {accountName} have been added successfully")
+    logger.info(f"All registry for subscription {accountName} have been added successfully")
 
 
 def onboard_workflow(
@@ -66,10 +70,10 @@ def onboard_workflow(
     acr_list_from_cwp,
     azure_tenant_id,
 ):
-    print(f"Number of container registries to onboard: {len(acr_list_from_cspm['resources'])}")
+    logger.info(f"Number of container registries to onboard: {len(acr_list_from_cspm['resources'])}")
 
     unique_account_ids = get_unique_account_ids(url, token, acr_list_from_cspm, azure_tenant_id)
-    print(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
+    logger.info(f"Number of azure cloud accounts that contains ACR: {len(unique_account_ids)}")
 
     authorized_subscriptions = read_authorized_subscriptions()
     unauthorized_subscriptions = read_unauthorized_subscriptions()
@@ -84,9 +88,9 @@ def onboard_workflow(
                 set_cloud_scan_rules(compute_url, compute_token, account)
                 add_container_registries(compute_url, compute_token, acr_list_from_cwp, acr_list_from_cspm, account)
             else:
-                print(f"Account {account[0]} is not authorized.")
+                logger.info(f"Account {account[0]} is not authorized.")
         else:
-            print(f"Account {account[0]} is explicitly denied by the configuration.")
+            logger.info(f"Account {account[0]} is explicitly denied by the configuration.")
 
 
 def get_container_registries(base_url, token):
@@ -97,13 +101,13 @@ def get_container_registries(base_url, token):
         response = requests.request("GET", url, headers=headers)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_container_registries, ", err)
-        print(f"Error text: {response.text}")
+        logger.error("Oops! An exception occurred in get_container_registries, ", err)
+        logger.error(f"{response.text}")
         return None
 
-    # print(f"Response status code: {response.status_code}")
-    # print(f"Response headers: {response.headers}")
-    # print(f"Response text: {response.text}")
+    logger.debug(f"Response status code: {response.status_code}")
+    logger.debug(f"Response headers: {response.headers}")
+    logger.debug(f"Response text: {response.text}")
     return response.json()
 
 
@@ -115,8 +119,8 @@ def get_images_number_per_regristry(base_url, token):
         response = requests.request("GET", url, headers=headers)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_container_registries, ", err)
-        print(f"Error text: {response.text}")
+        logger.error("Oops! An exception occurred in get_container_registries, ", err)
+        logger.error(f"{response.text}")
         return None
 
     response_json = response.json()
@@ -157,8 +161,8 @@ def set_cloud_scan_rules(base_url, token, account):
         response = requests.request("PUT", url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in set_cloud_scan_rules, ", err)
-        print(f"Error text: {response.text}")
+        logger.error("Oops! An exception occurred in set_cloud_scan_rules, ", err)
+        logger.error(f"{response.text}")
         return None
 
 
@@ -203,13 +207,13 @@ def create_cloud_account(base_url, token, account, azure_client_id, azure_client
         response = requests.request("POST", url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in create_cloud_account, ", err)
-        print(f"Error text: {response.text}")
+        logger.error("Oops! An exception occurred in create_cloud_account, ", err)
+        logger.error(f"{response.text}")
         return None
 
-    # print(f"Response status code: {response.status_code}")
-    # print(f"Response headers: {response.headers}")
-    # print(f"Response text: {response.text}")
+    logger.debug(f"Response status code: {response.status_code}")
+    logger.debug(f"Response headers: {response.headers}")
+    logger.debug(f"Response text: {response.text}")
     return response
 
 
@@ -235,7 +239,7 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
         response = requests.post(url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_subscriptions_by_tenant, ", err)
+        logger.error("Oops! An exception occurred in get_subscriptions_by_tenant, ", err)
         return None
 
     json_response = response.json()
@@ -246,7 +250,7 @@ def get_subscriptions_by_tenant(base_url, token, azure_tenant_id):
     data = json_response.get("data", {})
     next_page_token = data.get("nextPageToken", None)
     while total_rows > 0:
-        print(f"Total subscriptions part of the tenant: {len(items)}")
+        logger.info(f"Total subscriptions part of the tenant: {len(items)}")
         if not next_page_token:
             break  # Break the loop if no nextPageToken found
         # Update URL to get the next page
@@ -313,7 +317,7 @@ def get_acr(base_url, token):
         response = requests.post(url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_acr, ", err)
+        logger.error("Oops! An exception occurred in get_acr, ", err)
         return None
 
     return response.json()
@@ -338,7 +342,7 @@ def get_compute_url(base_url, token):
         response = requests.get(url, headers=headers)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except requests.exceptions.RequestException as err:
-        print("Oops! An exception occurred in get_compute_url, ", err)
+        logger.error("Oops! An exception occurred in get_compute_url, ", err)
         return None
 
     response_json = response.json()
@@ -353,7 +357,7 @@ def login_saas(base_url, access_key, secret_key):
         response = requests.post(url, headers=headers, data=payload)
         response.raise_for_status()  # Raises a HTTPError if the status is 4xx, 5xx
     except Exception as e:
-        print(f"Error in login_saas: {e}")
+        logger.info(f"Error in login_saas: {e}")
         return None
 
     return response.json().get("token")
@@ -369,6 +373,20 @@ def login_compute(base_url, access_key, secret_key):
 
 
 def main():
+    # Configure the logger
+    logging.basicConfig(level=logging.INFO,
+                        format='%(asctime)s - %(levelname)s - %(message)s',
+                        filename='app.log',
+                        filemode='a')
+
+    # Create a console handler
+    console_handler = logging.StreamHandler()
+
+    # Add the console handler to the logger
+    logger.addHandler(console_handler)
+
+    logger.info(f"======================= START =======================")
+    logger.debug(f"======================= terminal =======================")
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--report", action="store_true", help="Provides a summary of registries with the number of images in descending order."
@@ -386,28 +404,28 @@ def main():
     azure_tenant_id = os.environ.get("AZURE_TENANT_ID")
 
     if not url or not identity or not secret or not azure_client_id or not azure_client_secret or not azure_tenant_id:
-        print(
-            "Error: PRISMA_API_URL, PRISMA_ACCESS_KEY, PRISMA_SECRET_KEY, AZURE_CLIENT_ID, PRISMA_SECRET_KEY or AZURE_TENANT_ID environment variables are not set."
+        logger.error(
+            "PRISMA_API_URL, PRISMA_ACCESS_KEY, PRISMA_SECRET_KEY, AZURE_CLIENT_ID, PRISMA_SECRET_KEY or AZURE_TENANT_ID environment variables are not set."
         )
         return
 
     token = login_saas(url, identity, secret)
     compute_url = get_compute_url(url, token)
     compute_token = login_compute(compute_url, identity, secret)
-    # print(f"Here is the compute url: {compute_url} and token {compute_token}")
+    logger.debug(f"Compute url: {compute_url}")
 
     if token is None:
-        print("Error: Unable to authenticate.")
+        logger.error("Unable to authenticate.")
         return
 
     if args.report:
-        print("Running in report mode")
+        logger.info("Running in report mode")
         registry_count = get_images_number_per_regristry(compute_url, compute_token)
 
         for registry, count in registry_count.items():
-            print(f"Registry: {registry}, Number of Images: {count}")
+            logger.info(f"Registry: {registry}, Number of Images: {count}")
     if args.update:
-        print("Running in update mode")
+        logger.info("Running in update mode")
 
         acr_list_from_cspm = get_acr(url, token)
         acr_list_from_cwp = get_container_registries(compute_url, compute_token)
@@ -435,7 +453,7 @@ def main():
         )
 
     elif args.onboard:
-        print("Running in onboard mode")
+        logger.info("Running in onboard mode")
         acr_list_from_cspm = get_acr(url, token)
         acr_list_from_cwp = get_container_registries(compute_url, compute_token)
 
@@ -451,7 +469,9 @@ def main():
             azure_tenant_id,
         )
     else:
-        print("No arguments provided.")
+        logger.error("No arguments provided.")
+
+    logger.info(f"======================= END =======================")
 
 
 if __name__ == "__main__":

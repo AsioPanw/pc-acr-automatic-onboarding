@@ -65,7 +65,7 @@ export AZURE_CLIENT_SECRET="__REDACTED__"
 export AZURE_TENANT_ID="__REDACTED__"
 ```
 
-## Run the script
+## Run the Python script
 
 ```bash
 python3 -m virtualenv venv && source venv/bin/activate
@@ -75,4 +75,6 @@ python3 acr_automatic_onboarding.py --help
 python3 acr_automatic_onboarding.py --onboard
 ## Provides a summary of registries with the number of images in descending order
 python3 acr_automatic_onboarding.py --report
+## Onboard only ACR whihc are not yet onboarded
+python3 acr_automatic_onboarding.py --update
 ```
